@@ -10,34 +10,27 @@ from redis import Redis
 
 load_dotenv()
 
-
-def get_env(name, message, cast=str):
-    if name in os.environ:
-        return os.environ[name]
-    while True:
-        value = input(message)
-        try:
-            return cast(value)
-        except ValueError as e:
-            print(e)
-            time.sleep(1)
-
-
-# conn = psycopg2.connect(dbname='test', user='test', password='napoprtestavku', host='localhost')
-
 REDIS_HOST = os.environ['REDIS_HOST']
 REDIS_PORT = os.environ['REDIS_PORT']
+
 SESSION = os.environ['SESSION']
 API_ID = int(os.environ['API_ID'])
 API_HASH = os.environ['API_HASH']
-CHATS = os.environ['CHATS'].split(sep=',')
 
+DB_NAME = os.environ['DB_NAME']
+DB_USER = os.environ['DB_USER']
+DB_PASSWORD = os.environ['DB_PASSWORD']
+DB_HOST = os.environ['DB_HOST']
+
+CHATS = os.environ['CHATS'].split(sep=',')
+QUEUE = os.environ['QUEUE']
 
 class App:
-    def __init__(self, client, chats, redis, queue):
+    def __init__(self, client, chats, redis, db, queue):
         self.cl = client
         self.redis = redis
         self.chats = chats
+        self.db = db
         self.queue = queue
 
         self.cl.add_event_handler(self.on_message, events.NewMessage)
@@ -80,7 +73,10 @@ async def main():
     redis = Redis(host=REDIS_HOST, port=REDIS_PORT)
     print('Connected to redis')
 
-    app = App(client, redis)
+    db = psycopg2.connect(dbname=DB_NAME, user=DB_USER, password=DB_PASSWORD, host=DB_HOST)
+    print('Connected to database')
+
+    app = App(client, redis, db, QUEUE)
     await asyncio.gather(app.cl.run_until_disconnected(), app.run_redis())
 
 
