@@ -1,12 +1,11 @@
 import asyncio
-import time
 import os
 import re
-# import psycopg2
 
+import psycopg2
 from dotenv import load_dotenv
-from telethon import TelegramClient, events
 from redis import Redis
+from telethon import TelegramClient, events
 
 load_dotenv()
 
@@ -21,9 +20,11 @@ DB_NAME = os.environ['DB_NAME']
 DB_USER = os.environ['DB_USER']
 DB_PASSWORD = os.environ['DB_PASSWORD']
 DB_HOST = os.environ['DB_HOST']
+DB_PORT = os.environ['DB_HOST']
 
 CHATS = os.environ['CHATS'].split(sep=',')
 QUEUE = os.environ['QUEUE']
+
 
 class App:
     def __init__(self, client, chats, redis, db, queue):
@@ -38,6 +39,8 @@ class App:
     async def run_redis(self):
 
         while True:
+            await asyncio.sleep(6)
+
             q = self.redis.lpop(self.queue)
 
             if q is None:
@@ -45,25 +48,48 @@ class App:
 
             query = q.decode("utf-8")
 
-            await self.cl.send_message(self.chats[0], query)
+            print(query)
 
-            await asyncio.sleep(1)
+            for chat in self.chats:
+                await self.cl.send_message(chat, query)
 
     def on_message(self, event: events.NewMessage.Event):
         if event.chat.username not in self.chats:
             return
 
-        match_phones = re.findall(r'((\+7|7)+([0-9]){10})', event.message.raw_text)
-        match_emails = re.findall(r'[\w\.-]+@[\w\.-]+', event.message.raw_text)
+        matches_phone = re.findall(r'((\+7|7)+([0-9]){10})', event.message.raw_text)
+        matches_email = re.findall(r'[\w\.-]+@[\w\.-]+', event.message.raw_text)
+        targets = matches_email + [match[0] for match in matches_phone]
 
-        print(match_phones)
-        print(match_emails)
+        match_emails_logins = re.findall(
+            r'(Логин: ([\w\.-]+)|Домен: ([\w\.-]+))',
+            event.message.raw_text
+        )
+
+        if len(match_emails_logins) > 1:
+            targets.append(match_emails_logins[0][1] + '@' + match_emails_logins[1][2])
+
+        print('>>> targets', targets)
+
+        cursor = self.db.cursor()
+        sql = '''
+            INSERT INTO botcollector_searches (target, chat, search_text)
+            VALUES (%s, %s, %s)
+            ON CONFLICT (target, chat) DO UPDATE SET 
+            (target, chat, search_text) = (EXCLUDED.target, EXCLUDED.chat, EXCLUDED.search_text);
+        '''
+
+        for target in targets:
+            cursor.execute(sql, (target, event.chat.username, event.message.raw_text))
+
+        self.db.commit()
 
 
 async def main():
     client = TelegramClient(SESSION, API_ID, API_HASH)
     try:
         await client.connect()
+        await client.start()
     except Exception as e:
         print('Failed to connect', e)
         return
@@ -76,7 +102,7 @@ async def main():
     db = psycopg2.connect(dbname=DB_NAME, user=DB_USER, password=DB_PASSWORD, host=DB_HOST)
     print('Connected to database')
 
-    app = App(client, redis, db, QUEUE)
+    app = App(client, CHATS, redis, db, QUEUE)
     await asyncio.gather(app.cl.run_until_disconnected(), app.run_redis())
 
 
