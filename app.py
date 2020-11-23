@@ -79,14 +79,22 @@ class App:
             (target, chat, search_text) = (EXCLUDED.target, EXCLUDED.chat, EXCLUDED.search_text);
         '''
 
+        message = '<a href="https://t.me/%s/%s">Сообщение</a>%s' % (
+            event.chat.username,
+            event.message.id,
+            event.message.text
+        )
+
         for target in targets:
-            cursor.execute(sql, (target, event.chat.username, event.message.raw_text))
+            cursor.execute(sql, (target, event.chat.username, message))
 
         self.db.commit()
 
 
 async def main():
     client = TelegramClient(SESSION, API_ID, API_HASH)
+    client.parse_mode = 'html'
+
     try:
         await client.connect()
         await client.start()
