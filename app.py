@@ -39,7 +39,7 @@ class App:
     async def run_redis(self):
 
         while True:
-            await asyncio.sleep(6)
+            await asyncio.sleep(10)
 
             q = self.redis.lpop(self.queue)
 
@@ -73,20 +73,14 @@ class App:
 
         cursor = self.db.cursor()
         sql = '''
-            INSERT INTO botcollector_searches (target, chat, search_text)
+            INSERT INTO user_search_infos (target, chat, search_text)
             VALUES (%s, %s, %s)
             ON CONFLICT (target, chat) DO UPDATE SET 
             (target, chat, search_text) = (EXCLUDED.target, EXCLUDED.chat, EXCLUDED.search_text);
         '''
 
-        message = '<a href="https://t.me/%s/%s">Сообщение</a>%s' % (
-            event.chat.username,
-            event.message.id,
-            event.message.text
-        )
-
         for target in targets:
-            cursor.execute(sql, (target, event.chat.username, message))
+            cursor.execute(sql, (target, event.chat.username, event.message.text))
 
         self.db.commit()
 
